@@ -9,10 +9,12 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
   body { font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; }
-  .card { background:#fff; border-radius:1rem; border:1px solid #e2e8f0; box-shadow:0 1px 2px rgba(15,23,42,.04); padding:1.25rem; }
+  .card { min-width:0; background:#fff; border-radius:1rem; border:1px solid #e2e8f0; box-shadow:0 1px 2px rgba(15,23,42,.04); padding:1.25rem; }
   .card-title { font-weight:600; color:#0f172a; display:flex; align-items:center; gap:.5rem; margin-bottom:.75rem; }
   .tab-btn[aria-selected="true"] { background:#4f46e5; color:#fff; }
   .chip { display:inline-flex; align-items:center; gap:.25rem; padding:.125rem .5rem; border-radius:999px; font-size:.75rem; }
+  html, body { overflow-x:hidden; }
+  main section > * { min-width:0; }
   .step-dot { width:1.25rem; text-align:center; }
   /* A4 作业单 */
   .sheet { width:min(210mm,100%); min-height:297mm; margin:0 auto 1.5rem; background:#fff; padding:14mm 16mm; box-shadow:0 4px 24px rgba(0,0,0,.18); color:#0f172a; }
@@ -50,7 +52,7 @@
       <button class="tab-btn px-4 py-1.5 rounded-lg" data-view="parent" aria-selected="false">🏠 家长</button>
       <button class="tab-btn px-4 py-1.5 rounded-lg" data-view="teacher" aria-selected="false">🧑‍🏫 教师</button>
     </nav>
-    <div class="flex items-center gap-2 text-sm">
+    <div class="flex flex-wrap items-center gap-2 text-sm">
       <span id="mode-badge" class="px-3 py-1.5 rounded-lg border text-sm bg-slate-50 text-slate-500 border-slate-200">🧪 演示模式</span>
       <span id="sim-date" class="px-3 py-1.5 bg-amber-50 text-amber-800 rounded-lg border border-amber-200"></span>
       <button id="btn-next-day" class="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-100" title="推进模拟时间，观察遗忘衰减与复习调度">⏭ 下一天</button>
@@ -85,7 +87,7 @@
       </div>
 
       <div class="card" id="upload-card">
-        <div class="card-title">📷 提交手写作业 <span class="text-xs font-normal text-slate-400">JPG / PNG，手机可直接调用相机</span></div>
+        <div class="card-title">📷 提交手写作业 <span class="hidden sm:inline text-xs font-normal text-slate-400">JPG / PNG，手机可直接调用相机</span></div>
         <label for="file-input" class="block border-2 border-dashed border-slate-300 rounded-2xl p-6 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/40 transition">
           <div id="preview-wrap" class="hidden mb-3"><img id="preview-img" class="max-h-56 mx-auto rounded-lg shadow" alt="作业预览"></div>
           <div id="drop-hint">
