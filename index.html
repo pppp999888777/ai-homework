@@ -1,0 +1,1046 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>智学闭环 · 自适应数学作业系统</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  body { font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; }
+  .card { background:#fff; border-radius:1rem; border:1px solid #e2e8f0; box-shadow:0 1px 2px rgba(15,23,42,.04); padding:1.25rem; }
+  .card-title { font-weight:600; color:#0f172a; display:flex; align-items:center; gap:.5rem; margin-bottom:.75rem; }
+  .tab-btn[aria-selected="true"] { background:#4f46e5; color:#fff; }
+  .chip { display:inline-flex; align-items:center; gap:.25rem; padding:.125rem .5rem; border-radius:999px; font-size:.75rem; }
+  .step-dot { width:1.25rem; text-align:center; }
+  /* A4 作业单 */
+  .sheet { width:min(210mm,100%); min-height:297mm; margin:0 auto 1.5rem; background:#fff; padding:14mm 16mm; box-shadow:0 4px 24px rgba(0,0,0,.18); color:#0f172a; }
+  .grid-box { height:calc(var(--rows) * 8mm); margin-top:2mm; border:1px solid #a5b4fc;
+    background-image:linear-gradient(#dbe1fe 1px, transparent 1px), linear-gradient(90deg, #dbe1fe 1px, transparent 1px);
+    background-size:8mm 8mm; }
+  .qnum { display:inline-flex; width:1.6rem; height:1.6rem; border-radius:999px; background:#0f172a; color:#fff; font-size:.8rem; align-items:center; justify-content:center; margin-right:.5rem; }
+  .sec-tag { background:#eef2ff; color:#3730a3; font-weight:600; padding:.15rem .6rem; border-radius:.375rem; }
+  @media print {
+    @page { size:A4; margin:0; }
+    * { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    body { background:#fff !important; }
+    body > *:not(#ws-modal) { display:none !important; }
+    #ws-modal { position:static !important; display:block !important; background:none !important; padding:0 !important; }
+    #ws-modal .ws-scroll { position:static !important; max-height:none !important; overflow:visible !important; padding:0 !important; background:none !important; }
+    #ws-modal .no-print { display:none !important; }
+    .sheet { box-shadow:none !important; margin:0 !important; width:210mm; page-break-after:always; }
+  }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+
+<!-- 顶栏 -->
+<header class="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-slate-200">
+  <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
+    <div class="flex items-center gap-2 mr-auto">
+      <div class="w-9 h-9 rounded-xl bg-indigo-600 text-white grid place-items-center text-lg">∑</div>
+      <div>
+        <div class="font-bold leading-tight">智学闭环</div>
+        <div class="text-xs text-slate-500">自适应小学数学作业系统 · 原型</div>
+      </div>
+    </div>
+    <nav class="flex bg-slate-100 rounded-xl p-1 text-sm" role="tablist">
+      <button class="tab-btn px-4 py-1.5 rounded-lg" data-view="student" aria-selected="true">🎒 学生</button>
+      <button class="tab-btn px-4 py-1.5 rounded-lg" data-view="parent" aria-selected="false">🏠 家长</button>
+      <button class="tab-btn px-4 py-1.5 rounded-lg" data-view="teacher" aria-selected="false">🧑‍🏫 教师</button>
+    </nav>
+    <div class="flex items-center gap-2 text-sm">
+      <span id="mode-badge" class="px-3 py-1.5 rounded-lg border text-sm bg-slate-50 text-slate-500 border-slate-200">🧪 演示模式</span>
+      <span id="sim-date" class="px-3 py-1.5 bg-amber-50 text-amber-800 rounded-lg border border-amber-200"></span>
+      <button id="btn-next-day" class="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-100" title="推进模拟时间，观察遗忘衰减与复习调度">⏭ 下一天</button>
+      <button id="btn-reset" class="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-100" title="清空演示数据">↺ 重置</button>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-4 py-6">
+
+  <!-- ========== 学生端 ========== -->
+  <section id="view-student" class="grid lg:grid-cols-3 gap-5">
+    <div class="lg:col-span-2 space-y-5">
+      <div class="card bg-gradient-to-br from-indigo-600 to-violet-600 text-white border-0">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <div class="text-indigo-100 text-sm">五年级(3)班 · STU1001</div>
+            <div class="text-2xl font-bold mt-1">林小雨，你好！👋</div>
+            <div id="stu-streak" class="mt-2 text-indigo-100"></div>
+          </div>
+          <div class="text-5xl">🧮</div>
+        </div>
+        <div class="grid sm:grid-cols-2 gap-3 mt-5">
+          <button id="btn-go-upload" class="bg-white text-indigo-700 font-semibold rounded-2xl py-4 text-lg hover:bg-indigo-50">📷 拍照交作业</button>
+          <button id="btn-open-hw" class="bg-indigo-500/40 border border-white/40 font-semibold rounded-2xl py-4 text-lg hover:bg-indigo-500/60">📄 查看今日作业</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">📋 待完成任务</div>
+        <div id="task-list" class="space-y-3"></div>
+      </div>
+
+      <div class="card" id="upload-card">
+        <div class="card-title">📷 提交手写作业 <span class="text-xs font-normal text-slate-400">JPG / PNG，手机可直接调用相机</span></div>
+        <label for="file-input" class="block border-2 border-dashed border-slate-300 rounded-2xl p-6 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/40 transition">
+          <div id="preview-wrap" class="hidden mb-3"><img id="preview-img" class="max-h-56 mx-auto rounded-lg shadow" alt="作业预览"></div>
+          <div id="drop-hint">
+            <div class="text-4xl">📸</div>
+            <div class="mt-2 font-medium">点击拍照或选择作业图片</div>
+            <div id="drop-hint-sub" class="text-xs text-slate-400 mt-1">演示模式：不上传图片也可以直接点"AI 批改"</div>
+          </div>
+        </label>
+        <input id="file-input" type="file" accept="image/png,image/jpeg" capture="environment" class="hidden">
+        <button id="btn-submit" class="mt-4 w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-semibold rounded-2xl py-3.5 text-lg">✨ AI 批改</button>
+        <ol id="pipeline" class="mt-4 space-y-1.5 text-sm hidden"></ol>
+        <div id="grade-result" class="mt-4"></div>
+      </div>
+    </div>
+
+    <div class="space-y-5">
+      <div class="card">
+        <div class="card-title">📅 打卡日历</div>
+        <div id="calendar"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">🏅 成就勋章</div>
+        <div id="badges" class="grid grid-cols-3 gap-3"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">📈 本单元进度</div>
+        <div id="mini-mastery" class="space-y-3"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== 家长端 ========== -->
+  <section id="view-parent" class="hidden grid lg:grid-cols-3 gap-5">
+    <div class="card lg:col-span-2">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div class="card-title mb-0">📰 学习日报</div>
+        <button class="btn-print-hw bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl px-4 py-2 text-sm font-semibold">🖨 一键打印明日自适应作业</button>
+      </div>
+      <div id="daily-report" class="space-y-2 leading-relaxed"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">🎯 知识掌握雷达</div>
+      <div id="chart-radar" class="h-72"></div>
+    </div>
+    <div class="card lg:col-span-2">
+      <div class="card-title">🌳 知识漏洞树 <span class="text-xs font-normal text-slate-400">箭头：前置知识 → 后续知识；红=薄弱 黄=待巩固 绿=稳固 灰=未学</span></div>
+      <div id="chart-graph-parent" class="h-80"></div>
+      <div id="trace-parent" class="mt-2 text-sm"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">🧠 记忆保持率预测</div>
+      <div id="chart-retention" class="h-80"></div>
+    </div>
+    <div class="card lg:col-span-2">
+      <div class="card-title">🔁 艾宾浩斯复习调度 <span class="text-xs font-normal text-slate-400">复习节点：第 1、2、4、7、15 天</span></div>
+      <div class="overflow-x-auto"><table class="w-full text-sm" id="ebb-table"></table></div>
+    </div>
+    <div class="card">
+      <div class="card-title">💡 家长辅导小贴士</div>
+      <div id="cheat-sheets" class="space-y-3"></div>
+    </div>
+  </section>
+
+  <!-- ========== 教师端 ========== -->
+  <section id="view-teacher" class="hidden space-y-5">
+    <div id="kpis" class="grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
+    <div class="grid lg:grid-cols-3 gap-5">
+      <div class="card lg:col-span-2">
+        <div class="card-title">🔥 班级知识点掌握热力图</div>
+        <div id="chart-heatmap" style="height:640px"></div>
+      </div>
+      <div class="space-y-5">
+        <div class="card">
+          <div class="card-title">❗ 高频共性错题排行</div>
+          <div id="chart-errors" class="h-80"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">🔍 前置漏洞溯源</div>
+          <div id="trace-teacher" class="text-sm space-y-2"></div>
+        </div>
+      </div>
+    </div>
+    <div class="grid lg:grid-cols-3 gap-5">
+      <div class="card">
+        <div class="card-title">🌳 班级知识图谱</div>
+        <div id="chart-graph-teacher" class="h-80"></div>
+      </div>
+      <div class="card lg:col-span-2">
+        <div class="card-title">👥 学生能力档案</div>
+        <div class="overflow-x-auto max-h-96"><table class="w-full text-sm" id="student-table"></table></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- 作业单弹窗（也是打印区域） -->
+<div id="ws-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60">
+  <div class="ws-scroll absolute inset-0 overflow-y-auto p-4">
+    <div class="no-print sticky top-0 z-10 max-w-[210mm] mx-auto mb-4 flex justify-between items-center bg-white rounded-xl px-4 py-2 shadow">
+      <div class="text-sm text-slate-500">A4 预览 · 打印时选择"另存为 PDF"即可导出</div>
+      <div class="flex gap-2">
+        <button onclick="window.print()" class="bg-indigo-600 text-white rounded-lg px-4 py-1.5 text-sm font-semibold">🖨 打印 / 导出 PDF</button>
+        <button data-close="ws-modal" class="border rounded-lg px-3 py-1.5 text-sm">关闭</button>
+      </div>
+    </div>
+    <div id="worksheet"></div>
+  </div>
+</div>
+
+<!-- 学生档案弹窗 -->
+<div id="profile-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 p-4 overflow-y-auto">
+  <div class="max-w-3xl mx-auto bg-white rounded-2xl p-6 mt-10">
+    <div class="flex justify-between items-center">
+      <div id="profile-title" class="text-lg font-bold"></div>
+      <button data-close="profile-modal" class="border rounded-lg px-3 py-1 text-sm">关闭</button>
+    </div>
+    <div class="grid md:grid-cols-2 gap-4 mt-4">
+      <div id="chart-profile" class="h-72"></div>
+      <div id="profile-body" class="text-sm space-y-3"></div>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] hidden bg-slate-900 text-white text-sm px-4 py-2.5 rounded-xl shadow-lg"></div>
+
+<script>
+/* =====================================================================
+ * 1. 知识图谱（人教版 · 五上第一单元《小数乘法》及其前置知识）
+ * ===================================================================== */
+const UNITS = [
+  { id:'MATH_3B_INT_MULT',        name:'两位数乘两位数',     short:'多位数乘法',   grade:'三下', prereq:[],                                             pos:[0,1] },
+  { id:'MATH_4B_MULT_LAWS',       name:'乘法运算定律',       short:'乘法运算律',   grade:'四下', prereq:['MATH_3B_INT_MULT'],                           pos:[1,0] },
+  { id:'MATH_4B_DEC_MEANING',     name:'小数的意义与性质',   short:'小数意义',     grade:'四下', prereq:[],                                             pos:[0,3] },
+  { id:'MATH_4B_POINT_SHIFT',     name:'小数点移动规律',     short:'小数点移动',   grade:'四下', prereq:['MATH_4B_DEC_MEANING'],                        pos:[1,2.4] },
+  { id:'MATH_5A_DECIMAL_MULT_01', name:'小数乘整数',         short:'小数×整数',    grade:'五上', prereq:['MATH_3B_INT_MULT','MATH_4B_POINT_SHIFT'],     pos:[2,1.4] },
+  { id:'MATH_5A_DECIMAL_MULT_02', name:'小数乘小数',         short:'小数×小数',    grade:'五上', prereq:['MATH_5A_DECIMAL_MULT_01','MATH_4B_POINT_SHIFT'], pos:[3,1.4] },
+  { id:'MATH_5A_DECIMAL_MULT_03', name:'积的近似数',         short:'积的近似数',   grade:'五上', prereq:['MATH_5A_DECIMAL_MULT_02','MATH_4B_DEC_MEANING'], pos:[4,2.5] },
+  { id:'MATH_5A_DECIMAL_MULT_04', name:'运算定律推广到小数', short:'小数简便运算', grade:'五上', prereq:['MATH_5A_DECIMAL_MULT_02','MATH_4B_MULT_LAWS'],   pos:[4,0.3] },
+];
+const U = Object.fromEntries(UNITS.map(u => [u.id, u]));
+const CURRICULUM = UNITS.filter(u => u.grade === '五上').map(u => u.id);
+const INTERVALS = [1, 2, 4, 7, 15, 30];   // 艾宾浩斯节点（累计天数），30 = 长期记忆
+const GAPS      = [1, 1, 2, 3, 8, 30];    // 相邻节点之间的间隔
+const STUDENT   = { id:'STU1001', name:'林小雨', cls:'五年级(3)班' };
+
+const CONTENT = {
+  MATH_3B_INT_MULT:        { guide:'引导提示：用第二个因数每一位上的数分别去乘第一个因数，乘到十位时积的末位要和十位对齐。', tip:'用"买零食算总价"的方式练两位数乘法，比如"每包 12 元，买 15 包要多少钱"。', lesson:'微课 · 两位数乘两位数的竖式（4 分钟）', card:'竖式对位图解卡' },
+  MATH_4B_MULT_LAWS:       { guide:'引导提示：先找能凑成整十、整百、整千的"好朋友数"，例如 125×8=1000、25×4=100。', tip:'和孩子玩"凑整好朋友"卡片游戏：25↔4、125↔8、5↔2，看谁找得快。', lesson:'微课 · 乘法交换律与结合律（5 分钟）', card:'凑整好朋友速记卡' },
+  MATH_4B_DEC_MEANING:     { guide:'引导提示：比较小数大小先比整数部分，再从十分位起逐位比较，不是看小数位数多少。', tip:'用人民币理解小数：0.5 元是 5 角，0.48 元是 4 角 8 分，哪个多一目了然。', lesson:'微课 · 小数的意义与大小比较（4 分钟）', card:'人民币 ↔ 小数对照卡' },
+  MATH_4B_POINT_SHIFT:     { guide:'引导提示：乘 10、100、1000，小数点向右移动 1、2、3 位；除以它们则向左移动，位数不够用 0 补足。', tip:'让孩子用手指当"小数点"，在数位表上左右移动，边移边说"乘 10 向右走一步"。', lesson:'微课 · 小数点移动引起小数大小变化（5 分钟）', card:'小数点移动方向图解卡' },
+  MATH_5A_DECIMAL_MULT_01: { guide:'引导提示：先把小数看成整数来乘，再看因数中有几位小数，就从积的右边起数出几位点上小数点。', tip:'让孩子说出每一步的"为什么"：0.6×3 就是 3 个 0.6，也就是 18 个 0.1。', lesson:'微课 · 小数乘整数的算理（5 分钟）', card:'"先当整数算，再点小数点"三步卡' },
+  MATH_5A_DECIMAL_MULT_02: { guide:'引导提示：两个因数一共有几位小数，积就有几位小数；例如一位小数 × 一位小数，积是两位小数。', tip:'晚饭后玩"数小数位"小游戏：您报一个算式，孩子只说出积有几位小数，不用算结果。', lesson:'微课 · 小数乘小数：积的小数位数（6 分钟）', card:'小数位数相加图解卡' },
+  MATH_5A_DECIMAL_MULT_03: { guide:'引导提示：先算出准确的积，再看要保留位数的后一位，用四舍五入法取近似值。', tip:'提醒孩子做题前先用笔圈出"保留两位小数"这类要求，养成审题好习惯。', lesson:'微课 · 积的近似数与四舍五入（4 分钟）', card:'审题圈画三步法卡' },
+  MATH_5A_DECIMAL_MULT_04: { guide:'引导提示：整数乘法的交换律、结合律、分配律同样适用于小数，先观察能否凑整再计算。', tip:'让孩子先说"这道题能不能简便算？用哪个定律？"再动笔，比直接算更重要。', lesson:'微课 · 运算定律推广到小数（6 分钟）', card:'三大运算定律对照卡' },
+};
+const TYPE_GUIDE = {
+  '计算失误':   '引导提示：先估一估结果大约是多少，再验算，用估算来发现计算失误。',
+  '审题不清':   '引导提示：做题前先圈出题目要求，例如"保留两位小数""用简便方法计算"。',
+  '书写不规范': '引导提示：小数点要写清楚、点在数字右下角，写完检查一遍。',
+};
+const TYPE_DELTA = { '概念混淆':-0.2, '公式理解偏差':-0.15, '计算失误':-0.08, '审题不清':-0.06, '书写不规范':-0.05 };
+
+/* =====================================================================
+ * 2. 数学工具 & 题目模板（确定性答案计算，模拟"Python 校验"层）
+ * ===================================================================== */
+const rnd    = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const pick   = arr => arr[Math.floor(Math.random() * arr.length)];
+const clamp  = (x, a, b) => Math.max(a, Math.min(b, x));
+const r2     = x => Math.round(x * 100) / 100;
+const fmt    = x => String(parseFloat(Number(x).toFixed(8)));
+const places = s => (String(s).split('.')[1] || '').length;
+const mul    = (a, b) => fmt(Number(a) * Number(b));
+const sleep  = ms => new Promise(r => setTimeout(r, ms));
+function rdec(lo, hi, d) { let n; do { n = rnd(lo, hi); } while (n % 10 === 0); return fmt(n / 10 ** d); }
+function slip(ans) {
+  const p = places(ans), step = 10 ** -p; let w;
+  do { w = fmt(Number(ans) + pick([-2, -1, 1, 2]) * step * (p === 0 ? pick([1, 10]) : 1)); } while (Number(w) <= 0 || w === ans);
+  return w;
+}
+const cleanErrs = (errs, ans) => errs.filter(e => e[1] !== ans);
+
+function qMul(unit, a, b, word) {
+  a = String(a); b = String(b);
+  const ans = mul(a, b), pa = places(a), pb = places(b), p = pa + pb;
+  const ia = Math.round(a * 10 ** pa), ib = Math.round(b * 10 ** pb), ip = ia * ib;
+  const errs = [['计算失误 - 进位或乘法口诀错误', slip(ans)]];
+  if (p > 0) errs.push(
+    ['概念混淆 - 小数点位数处理错误', fmt(ans * 10)],
+    ['概念混淆 - 小数点位数处理错误', fmt(ans / 10)],
+    ['书写不规范 - 小数点漏写或不清晰', String(ip)]);
+  const note = String(ip).length <= p ? '（位数不够，在前面用 0 补足）' : (String(ip).endsWith('0') ? '（末尾的 0 可以去掉）' : '');
+  const sol = p ? `先按整数乘法计算：${ia} × ${ib} = ${ip}；因数中一共有 ${p} 位小数，从积的右边起数出 ${p} 位点上小数点${note}，得 ${ans}。` : `${a} × ${b} = ${ans}。`;
+  const base = { unit, expr:`${a} × ${b}`, errs: cleanErrs(errs, ans) };
+  return word
+    ? { ...base, kind:'word', text:word[0], answer:`${ans} ${word[1]}`, suffix:word[1], solution:`列式：${a} × ${b} = ${ans}（${word[1]}）。${sol}` }
+    : { ...base, kind:'calc', text:`${a} × ${b} =`, answer:ans, suffix:'', solution:sol };
+}
+function qInt(unit, a, b, word) {
+  const ans = String(a * b);
+  const base = { unit, expr:`${a} × ${b}`, errs:[['计算失误 - 进位或乘法口诀错误', slip(ans)]] };
+  const sol = `列竖式：先用 ${b % 10} 去乘 ${a}，再用 ${Math.floor(b / 10)} 个十去乘 ${a}，两次的积相加得 ${ans}。`;
+  return word
+    ? { ...base, kind:'word', text:word[0], answer:`${ans} ${word[1]}`, suffix:word[1], solution:`列式：${a} × ${b} = ${ans}（${word[1]}）。${sol}` }
+    : { ...base, kind:'calc', text:`${a} × ${b} =`, answer:ans, suffix:'', solution:sol };
+}
+function qShift(unit, a, op, k) {
+  const ans = op === '×' ? fmt(a * k) : fmt(a / k), n = String(k).length - 1, dir = op === '×' ? '右' : '左';
+  const errs = [
+    ['概念混淆 - 小数点移动方向错误', op === '×' ? fmt(a / k) : fmt(a * k)],
+    ['计算失误 - 小数点移动位数数错', op === '×' ? fmt(a * k * 10) : fmt(a / k / 10)]];
+  return { unit, kind:'calc', text:`${a} ${op} ${k} =`, expr:`${a} ${op} ${k}`, answer:ans, suffix:'',
+    solution:`${op === '×' ? '乘' : '除以'} ${k}，小数点向${dir}移动 ${n} 位，得 ${ans}。`, errs: cleanErrs(errs, ans) };
+}
+function qCompare(unit, a, b) {
+  const ans = Number(a) > Number(b) ? '>' : '<';
+  return { unit, kind:'calc', text:`比较大小：${a} ○ ${b}（在 ○ 里填 > 或 <）`, expr:`${a} ○ ${b}`, answer:ans, suffix:'',
+    solution:`把 ${a} 看作 ${Number(a).toFixed(2)}，与 ${b} 从十分位起逐位比较，所以 ${a} ${ans} ${b}。`,
+    errs:[['概念混淆 - 按小数位数多少比较大小', ans === '>' ? '<' : '>']] };
+}
+function qApprox(unit, a, c, word) {
+  const m = Math.round(a * c * 1000), exact = fmt(m / 1000), r = Math.round(m / 10), ans = (r / 100).toFixed(2), last = m % 10;
+  const errs = [
+    ['审题不清 - 未按要求保留两位小数', exact],
+    ['计算失误 - 四舍五入进位错误', ((r + (last >= 5 ? -1 : 1)) / 100).toFixed(2)],
+    ['概念混淆 - 小数点位数处理错误', fmt(ans * 10)]];
+  const sol = `${a} × ${c} = ${exact}，看千分位上的 ${last}，${last >= 5 ? '满 5 向前一位进 1' : '不满 5 直接舍去'}，所以 ≈ ${ans}。`;
+  const base = { unit, expr:`${a} × ${c}`, errs: cleanErrs(errs, ans) };
+  return word
+    ? { ...base, kind:'word', text:word, answer:`${ans} 元`, suffix:'元', solution:sol }
+    : { ...base, kind:'calc', text:`${a} × ${c} ≈（得数保留两位小数）`, answer:ans, suffix:'', solution:sol };
+}
+
+const W01 = [
+  (a, b) => [`一支钢笔 ${a} 元，买 ${b} 支需要多少元？`, '元'],
+  (a, b) => [`每瓶果汁 ${a} 升，${b} 瓶一共多少升？`, '升'],
+  (a, b) => [`一辆自行车每分钟行 ${a} 千米，${b} 分钟行多少千米？`, '千米'],
+];
+const W02 = [
+  (a, b) => [`一块长方形菜地长 ${a} 米，宽 ${b} 米，面积是多少平方米？`, '平方米'],
+  (a, b) => [`每米彩带 ${a} 元，买 ${b} 米需要多少元？`, '元'],
+  (a, b) => [`每千克大米 ${a} 元，买 ${b} 千克需要多少元？`, '元'],
+];
+
+const GEN = {
+  MATH_3B_INT_MULT: v => { const a = rnd(12, 98), b = rnd(12, 98);
+    return qInt('MATH_3B_INT_MULT', a, b, v ? [`学校每箱运来 ${a} 本练习本，一共运来 ${b} 箱，共有多少本？`, '本'] : null); },
+  MATH_4B_MULT_LAWS: () => { const n = rnd(3, 99), [x, y] = pick([[125, 8], [25, 4]]), ans = String(n * x * y);
+    return { unit:'MATH_4B_MULT_LAWS', kind:'calc', text:`${x} × ${n} × ${y} =（用简便方法计算）`, expr:`${x} × ${n} × ${y}`, answer:ans, suffix:'',
+      solution:`运用乘法交换律、结合律：${x} × ${y} × ${n} = ${x * y} × ${n} = ${ans}。`,
+      errs: cleanErrs([['公式理解偏差 - 运算定律使用不当', String(n * x * y / 10)], ['计算失误 - 进位或乘法口诀错误', slip(ans)]], ans) }; },
+  MATH_4B_DEC_MEANING: () => { const a = rdec(11, 99, 1); let b;
+    do { b = fmt(Number(a) + rnd(-9, 9) / 100); } while (b === a || Number(b) <= 0);
+    return qCompare('MATH_4B_DEC_MEANING', a, b); },
+  MATH_4B_POINT_SHIFT: () => qShift('MATH_4B_POINT_SHIFT', rdec(101, 9999, 2), ...pick([['×', 10], ['×', 100], ['÷', 10], ['÷', 100]])),
+  MATH_5A_DECIMAL_MULT_01: v => { const a = pick([rdec(11, 99, 1), rdec(101, 999, 2)]), b = rnd(3, 24);
+    return qMul('MATH_5A_DECIMAL_MULT_01', a, b, v ? pick(W01)(a, b) : null); },
+  MATH_5A_DECIMAL_MULT_02: v => { const a = rdec(11, 99, 1), b = pick([rdec(11, 99, 1), rdec(11, 99, 2)]);
+    return qMul('MATH_5A_DECIMAL_MULT_02', a, b, v ? pick(W02)(a, b) : null); },
+  MATH_5A_DECIMAL_MULT_03: v => { let a, c; do { a = rdec(101, 999, 2); c = rdec(11, 99, 1); } while (Math.round(a * c * 1000) % 10 === 0);
+    return qApprox('MATH_5A_DECIMAL_MULT_03', a, c, v ? `每千克苹果 ${a} 元，买 ${c} 千克大约需要多少元？（得数保留两位小数）` : null); },
+  MATH_5A_DECIMAL_MULT_04: v => {
+    const unit = 'MATH_5A_DECIMAL_MULT_04', a = rdec(11, 99, 1), form = v ? 'f2' : pick(['f1', 'f2', 'f3']);
+    if (form === 'f1') {
+      const [p, q] = pick([['0.25', '4'], ['2.5', '0.4'], ['1.25', '8']]), prod = mul(p, q), ans = mul(prod, a);
+      return { unit, kind:'calc', text:`${p} × ${a} × ${q} =（用简便方法计算）`, expr:`${p} × ${a} × ${q}`, answer:ans, suffix:'',
+        solution:`运用乘法交换律、结合律：${p} × ${q} = ${prod}，原式 = ${prod} × ${a} = ${ans}。`,
+        errs: cleanErrs([['公式理解偏差 - 运算定律使用不当', fmt(ans / 10)], ['计算失误 - 进位或乘法口诀错误', slip(ans)]], ans) };
+    }
+    if (form === 'f2') {
+      const ans = mul(a, 101), wrong = fmt(a * 100 + 1);
+      const sol = `${a} × 101 = ${a} × (100 + 1) = ${a} × 100 + ${a} = ${mul(a, 100)} + ${a} = ${ans}。`;
+      const errs = cleanErrs([['公式理解偏差 - 乘法分配律拆分错误', wrong], ['计算失误 - 进位或乘法口诀错误', slip(ans)]], ans);
+      return v
+        ? { unit, kind:'word', text:`一本字典 ${a} 元，学校买了 101 本，一共需要多少元？（用简便方法计算）`, expr:`${a} × 101`, answer:`${ans} 元`, suffix:'元', solution:sol, errs }
+        : { unit, kind:'calc', text:`${a} × 101 =（用简便方法计算）`, expr:`${a} × 101`, answer:ans, suffix:'', solution:sol, errs };
+    }
+    const ans = mul(a, 10);
+    return { unit, kind:'calc', text:`${a} × 9.9 + ${a} × 0.1 =（用简便方法计算）`, expr:`${a} × 9.9 + ${a} × 0.1`, answer:ans, suffix:'',
+      solution:`逆用乘法分配律：${a} × (9.9 + 0.1) = ${a} × 10 = ${ans}。`,
+      errs: cleanErrs([['公式理解偏差 - 乘法分配律逆用错误', fmt(a * 0.99)], ['计算失误 - 进位或乘法口诀错误', slip(ans)]], ans) };
+  },
+};
+
+/* =====================================================================
+ * 3. 状态 & 持久化（原型用 localStorage；正式版落到 SQLite/PostgreSQL）
+ * ===================================================================== */
+const STORE_KEY = 'amh_state_v1';
+let state;
+
+function todayYmd() { return ymd(new Date()); }
+function ymd(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+function parseYmd(s) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); }
+function dateOf(day) { const d = parseYmd(state.start); d.setDate(d.getDate() + day - 1); return d; }
+const md = d => `${d.getMonth() + 1}月${d.getDate()}日`;
+
+function initState() {
+  const seed = {
+    // [P(L), 艾宾浩斯阶段, 上次练习日, 下次复习日]
+    MATH_3B_INT_MULT:    [0.9, 4, -10, 20],
+    MATH_4B_MULT_LAWS:   [0.7, 2, -2, 2],
+    MATH_4B_DEC_MEANING: [0.8, 3, -4, 3],
+    MATH_4B_POINT_SHIFT: [0.5, 1, -1, 1],
+  };
+  const units = {};
+  UNITS.forEach(u => {
+    const s = seed[u.id];
+    units[u.id] = s ? { pL:s[0], stage:s[1], lastDay:s[2], nextDue:s[3], learned:true }
+                    : { pL:0.2, stage:0, lastDay:null, nextDue:null, learned:false };
+  });
+  const s = {
+    start: todayYmd(), day: 1, units, progress: 0, phase: 'baseline',
+    history: [], lastWrong: [], lastDx: null, lastGraded: null,
+    stats: { subs:0, perfect:0, fixed:0, reviews:0 }, checkins: [], errorLog: [],
+  };
+  // 历史"预习打卡"
+  for (let i = 8; i >= 1; i--) if (i !== 3) { const d = parseYmd(s.start); d.setDate(d.getDate() - i); s.checkins.push(ymd(d)); }
+  state = s;
+  state.homework = buildBaseline();
+  return s;
+}
+function load() {
+  try { const raw = localStorage.getItem(STORE_KEY); if (raw) { state = JSON.parse(raw); return; } } catch (e) {}
+  initState();
+}
+function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) {} }
+
+/* =====================================================================
+ * 4. 知识追踪：掌握概率 P(L) 与 记忆保持率 R = e^{-t/S}
+ * ===================================================================== */
+function stability(id) { const s = state.units[id]; return 3 * (INTERVALS[s.stage] + 1) * (0.5 + s.pL); }
+function retention(id, extra = 0) {
+  const s = state.units[id]; if (!s.learned) return 1;
+  return Math.exp(-Math.max(0, state.day - s.lastDay + extra) / stability(id));
+}
+function eff(id) { const s = state.units[id]; return s.learned ? s.pL * retention(id) : s.pL; }
+function level(v, learned = true) {
+  if (!learned) return { c:'#94a3b8', t:'未学', cls:'bg-slate-100 text-slate-500' };
+  if (v < 0.6)  return { c:'#ef4444', t:'薄弱', cls:'bg-red-100 text-red-700' };
+  if (v < 0.8)  return { c:'#f59e0b', t:'待巩固', cls:'bg-amber-100 text-amber-700' };
+  return { c:'#22c55e', t:'稳固', cls:'bg-green-100 text-green-700' };
+}
+// 递归溯源：找出所有掌握度低于阈值的前置知识
+function traceRoots(id, getM, th = 0.65, seen = new Set()) {
+  const out = [];
+  U[id].prereq.forEach(p => {
+    if (seen.has(p)) return; seen.add(p);
+    if (getM(p) < th) out.push(p);
+    out.push(...traceRoots(p, getM, th, seen));
+  });
+  return out;
+}
+
+/* =====================================================================
+ * 5. 作业生成：基线 & 自适应（A 新课 60% / B 变式 25% / C 复习 15%）
+ * ===================================================================== */
+function hwId() { return `HW-${STUDENT.id}-${ymd(dateOf(state.day)).replace(/-/g, '')}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`; }
+
+function buildBaseline() {
+  const u = 'MATH_5A_DECIMAL_MULT_01';
+  const qs = [
+    qMul(u, '0.6', 3), qMul(u, '1.25', 4), qMul(u, '2.4', 15), qMul(u, '0.36', 25),
+    qMul(u, '0.85', 6, ['一支铅笔 0.85 元，买 6 支需要多少元？', '元']),
+    qShift('MATH_4B_POINT_SHIFT', '3.7', '×', 100),
+  ].map(q => ({ ...q, sec:'A' }));
+  return { id: hwId(), day: state.day, baseline: true, submitted: false,
+    title: '基线测试 · 《小数乘整数》',
+    sections: [{ key:'A', title:'基线测试（全班统一）', ratio:'100%', desc:'人教版五年级上册 第一单元 1.1 小数乘整数 · 冷启动诊断', questions: qs }],
+    parentTip: '这是开学第一份基线作业，全班题目相同，用于了解孩子的起点。请让孩子独立完成，不要提示，这样系统才能准确诊断。' };
+}
+
+function buildHomework() {
+  const day = state.day, target = CURRICULUM[state.progress];
+  const learned = UNITS.filter(u => state.units[u.id].learned && u.id !== target).map(u => u.id);
+
+  // 模块 A：当前进度新题（3 道：2 计算 + 1 应用）
+  const A = [GEN[target](false), GEN[target](false), GEN[target](true)].map(q => ({ ...q, sec:'A' }));
+
+  // 模块 B：错题靶向变式（2 道，改变数字与情境）
+  const cnt = {}; state.lastWrong.forEach(w => cnt[w.unit] = (cnt[w.unit] || 0) + 1);
+  let bUnits = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a]);
+  const fromWrong = bUnits.length > 0;
+  if (!fromWrong) bUnits = [...learned].sort((a, b) => eff(a) - eff(b)).slice(0, 2);
+  if (!bUnits.length) bUnits = [target];
+  const B = [0, 1].map(i => ({ ...GEN[bUnits[i % bUnits.length]](i === 0), sec:'B' }));
+
+  // 模块 C：艾宾浩斯唤醒（1 道，明天到期的复习节点优先）
+  const due = learned.filter(id => state.units[id].nextDue <= day + 1).sort((a, b) => eff(a) - eff(b));
+  const cUnit = due[0] || [...learned].sort((a, b) => retention(a) - retention(b))[0] || target;
+  const C = [{ ...GEN[cUnit](false), sec:'C' }];
+
+  const n = state.history.length;   // 基线之后的第 n 份
+  return { id: hwId(), day: day + 1, baseline: false, submitted: false,
+    title: `第 ${n} 份自适应作业 · 《${U[target].name}》`,
+    sections: [
+      { key:'A', title:'模块 A · 新课进阶', ratio:'≈60%', desc:`顺延学习目标：《${U[target].name}》`, questions: A },
+      { key:'B', title:'模块 B · 错题靶向变式', ratio:'≈25%', desc: fromWrong ? `针对上次错题：${Object.keys(cnt).map(id => U[id].name).join('、')}` : '上次全对，针对当前最薄弱知识点', questions: B },
+      { key:'C', title:'模块 C · 遗忘曲线唤醒', ratio:'≈15%', desc:`艾宾浩斯第 ${Math.min(state.units[cUnit].stage + 1, 5)} 轮复习：《${U[cUnit].name}》`, questions: C },
+    ],
+    parentTip: makeParentTip(target) };
+}
+
+function makeParentTip(target) {
+  const cnt = {}; state.lastWrong.forEach(w => cnt[w.unit] = (cnt[w.unit] || 0) + 1);
+  const top = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0];
+  if (top) return `孩子在「${U[top].name}」上还有些小卡壳，这很正常！${CONTENT[top].tip}记得先表扬做对的题目，再一起看错题——每天 10 分钟的陪伴胜过 1 小时的催促。`;
+  return `上次作业全对，请给孩子一个大大的肯定！可以请孩子当"小老师"，给您讲讲「${U[target].name}」怎么算——讲得出来，才是真正学会。`;
+}
+
+const flatQs = hw => hw.sections.flatMap(s => s.questions);
+
+/* =====================================================================
+ * 6. AI 批改管线（模拟 Vision-LLM，输出与 PRD 提示词 1 相同的 JSON 协议）
+ * ===================================================================== */
+// 通过 backend/app.py 启动时走真实 AI 批改；直接双击打开 index.html 时使用本地模拟
+let AI_MODE = false;
+async function detectBackend() {
+  if (!location.protocol.startsWith('http')) return;
+  try {
+    const h = await (await fetch('/api/health')).json();
+    AI_MODE = !!h.ai;
+    const badge = $('#mode-badge');
+    badge.textContent = AI_MODE ? `🤖 AI 批改 · ${h.model}` : '⚠️ 后端未配置 API Key · 演示模式';
+    badge.className = `px-3 py-1.5 rounded-lg border text-sm ${AI_MODE ? 'bg-green-50 text-green-700 border-green-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`;
+  } catch (e) {}
+  $('#drop-hint-sub').textContent = AI_MODE ? '请拍清楚整页作业，题号可见' : '演示模式：不上传图片也可以直接点"AI 批改"';
+}
+
+async function callVisionAPI(imageB64, hw) {
+  if (AI_MODE) {
+    const res = await fetch('/api/grade', { method:'POST', headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        student_id: STUDENT.id, homework_id: hw.id, image_base64: imageB64, media_type: 'image/jpeg',
+        questions: flatQs(hw).map((q, i) => ({ question_id: i + 1, text: q.text, expr: q.expr, answer: q.answer, unit: q.unit, unit_name: U[q.unit].name })),
+        profile: Object.fromEntries(UNITS.map(u => [u.id, state.units[u.id].pL])),
+      }) });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.detail || `批改失败（${res.status}）`);
+    return body;
+  }
+  await sleep(2600);
+  const qs = flatQs(hw);
+  const submissions = qs.map((q, i) => {
+    const s = state.units[q.unit];
+    const base = s.learned ? eff(q.unit) : 0.5;
+    const pre = U[q.unit].prereq.length ? Math.min(...U[q.unit].prereq.map(eff)) : 1;
+    const ok = Math.random() < clamp(0.3 + 0.65 * (0.6 * base + 0.4 * pre), 0.25, 0.95);
+    if (ok || !q.errs.length) {
+      return { question_id: i + 1, is_correct: true, student_answer: `${q.expr} = ${q.answer}`, correct_answer: q.answer,
+        error_type: null, knowledge_unit: q.unit, heuristic_guidance: null };
+    }
+    const [type, wrong] = pick(q.errs), cat = type.split(' - ')[0];
+    return { question_id: i + 1, is_correct: false,
+      student_answer: `${q.expr} = ${wrong}${q.suffix ? ' ' + q.suffix : ''}`, correct_answer: q.answer,
+      error_type: type, knowledge_unit: q.unit, heuristic_guidance: TYPE_GUIDE[cat] || CONTENT[q.unit].guide };
+  });
+  const agg = {};
+  submissions.forEach(s => {
+    const pL = state.units[s.knowledge_unit].pL;
+    const d = s.is_correct ? Math.max(0.02, r2(0.12 * (1 - pL))) : TYPE_DELTA[s.error_type.split(' - ')[0]];
+    agg[s.knowledge_unit] = r2((agg[s.knowledge_unit] || 0) + d);
+  });
+  return {
+    student_id: STUDENT.id, homework_id: hw.id,
+    total_score: Math.round(100 * submissions.filter(s => s.is_correct).length / submissions.length),
+    submissions,
+    mastery_updates: Object.entries(agg).map(([k, v]) => ({ knowledge_unit: k, delta_mastery: v })),
+  };
+}
+
+function applyDiagnosis(dx, hw) {
+  const day = state.day, qs = flatQs(hw);
+  dx.mastery_updates.forEach(m => { const s = state.units[m.knowledge_unit]; s.pL = r2(clamp(s.pL + m.delta_mastery, 0.05, 0.98)); });
+
+  // 艾宾浩斯调度：错 → 重置到第 1 节点；对且到期 → 进入下一节点
+  const byUnit = {};
+  dx.submissions.forEach(s => { const r = byUnit[s.knowledge_unit] ||= { ok:0, bad:0 }; s.is_correct ? r.ok++ : r.bad++; });
+  Object.entries(byUnit).forEach(([id, r]) => {
+    const s = state.units[id], wasDue = s.learned && s.nextDue <= day;
+    if (r.bad > 0 || !s.learned) { s.stage = 0; s.nextDue = day + GAPS[0]; }
+    else if (wasDue) { s.stage = Math.min(s.stage + 1, 5); s.nextDue = day + GAPS[s.stage]; }
+    s.learned = true; s.lastDay = day;
+  });
+
+  const wrong = dx.submissions.filter(s => !s.is_correct);
+  state.lastWrong = wrong.map(s => ({ unit: s.knowledge_unit, type: s.error_type }));
+  wrong.forEach(s => state.errorLog.push({ unit: s.knowledge_unit, type: s.error_type, day }));
+
+  state.stats.subs++;
+  if (dx.total_score === 100) state.stats.perfect++;
+  dx.submissions.forEach((s, i) => { if (s.is_correct && qs[i].sec === 'B' && !hw.baseline) state.stats.fixed++;
+                                     if (s.is_correct && qs[i].sec === 'C') state.stats.reviews++; });
+
+  const mastered = Object.entries(byUnit).filter(([, r]) => r.bad === 0).map(([id]) => id);
+  state.history.push({ day, hwId: hw.id, score: dx.total_score, mastered, wrong: state.lastWrong });
+  const ck = ymd(dateOf(day)); if (!state.checkins.includes(ck)) state.checkins.push(ck);
+
+  // 进度推进：模块 A 正确率 ≥ 60% 则进入下一小节
+  const aIdx = qs.map((q, i) => q.sec === 'A' ? i : -1).filter(i => i >= 0);
+  const aRate = aIdx.filter(i => dx.submissions[i].is_correct).length / aIdx.length;
+  if (state.phase === 'baseline') state.phase = 'adaptive';
+  if (aRate >= 0.6 && state.progress < CURRICULUM.length - 1) state.progress++;
+}
+
+/* =====================================================================
+ * 7. 通用 UI 工具
+ * ===================================================================== */
+const $ = s => document.querySelector(s);
+const charts = {};
+function chart(id) {
+  const el = document.getElementById(id);
+  if (!charts[id] || charts[id].getDom() !== el) charts[id] = echarts.init(el);
+  return charts[id];
+}
+window.addEventListener('resize', () => Object.values(charts).forEach(c => c.resize()));
+let toastTimer;
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.add('hidden'), 2400); }
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+const pct = v => `${Math.round(v * 100)}%`;
+function bar(v, color) { return `<div class="h-2 bg-slate-100 rounded-full overflow-hidden"><div class="h-full rounded-full" style="width:${pct(v)};background:${color}"></div></div>`; }
+function relDay(d) { const diff = d - state.day; return diff < 0 ? `已逾期 ${-diff} 天` : diff === 0 ? '今天' : diff === 1 ? '明天' : `${diff} 天后`; }
+
+let currentView = 'student';
+function switchView(v) {
+  currentView = v;
+  document.querySelectorAll('.tab-btn').forEach(b => b.setAttribute('aria-selected', b.dataset.view === v));
+  ['student', 'parent', 'teacher'].forEach(x => $(`#view-${x}`).classList.toggle('hidden', x !== v));
+  try { localStorage.setItem('amh_view', v); } catch (e) {}
+  renderView();
+}
+function renderView() {
+  $('#sim-date').textContent = `📅 ${md(dateOf(state.day))} · 第 ${state.day} 天`;
+  if (currentView === 'student') renderStudent();
+  if (currentView === 'parent') renderParent();
+  if (currentView === 'teacher') renderTeacher();
+  requestAnimationFrame(() => Object.values(charts).forEach(c => c.resize()));
+}
+
+/* =====================================================================
+ * 8. 学生端
+ * ===================================================================== */
+function streak() {
+  const set = new Set(state.checkins); const d = dateOf(state.day);
+  if (!set.has(ymd(d))) d.setDate(d.getDate() - 1);
+  let n = 0; while (set.has(ymd(d))) { n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+const BADGES = [
+  { icon:'🚀', name:'初次提交', desc:'完成基线测试',            ok: s => s.subs >= 1 },
+  { icon:'🔥', name:'三日连击', desc:'连续打卡 3 天',           ok: () => streak() >= 3 },
+  { icon:'💯', name:'满分达人', desc:'获得一次满分',            ok: s => s.perfect >= 1 },
+  { icon:'🎯', name:'错题克星', desc:'答对 3 道错题变式',       ok: s => s.fixed >= 3 },
+  { icon:'🧠', name:'记忆大师', desc:'完成 3 次遗忘曲线复习',   ok: s => s.reviews >= 3 },
+  { icon:'🏔', name:'单元攀登', desc:'进阶到"运算定律推广到小数"', ok: () => state.progress >= 3 },
+];
+
+function renderStudent() {
+  const sk = streak();
+  $('#stu-streak').innerHTML = `🔥 已连续打卡 <b class="text-white text-lg">${sk}</b> 天 · 累计提交 ${state.stats.subs} 次作业`;
+
+  const hw = state.homework, n = flatQs(hw).length;
+  const due = UNITS.filter(u => state.units[u.id].learned && state.units[u.id].nextDue <= state.day);
+  $('#task-list').innerHTML = `
+    <div class="flex flex-wrap items-center gap-3 p-4 rounded-2xl bg-indigo-50 border border-indigo-100">
+      <div class="text-3xl">${hw.baseline ? '📘' : '📗'}</div>
+      <div class="flex-1 min-w-[12rem]">
+        <div class="font-semibold">${hw.title}</div>
+        <div class="text-xs text-slate-500 mt-0.5">${n} 道题 · ${hw.sections.map(s => `${s.title.split(' · ')[0]} ${s.questions.length} 题`).join(' / ')}</div>
+      </div>
+      <span class="chip bg-amber-100 text-amber-700">待提交</span>
+      <button class="btn-open-hw-inline px-3 py-2 rounded-xl bg-white border text-sm">查看 / 打印</button>
+      <button class="btn-go-upload-inline px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm">去提交</button>
+    </div>
+    <div class="p-4 rounded-2xl bg-slate-50 border border-slate-100">
+      <div class="text-sm font-medium mb-2">🔁 今天该复习的知识点（已自动编入作业模块 C）</div>
+      <div class="flex flex-wrap gap-2">${due.length ? due.map(u => `<span class="chip bg-violet-100 text-violet-700">${u.name} · 第 ${Math.min(state.units[u.id].stage + 1, 5)} 轮</span>`).join('') : '<span class="text-sm text-slate-400">暂无到期复习，继续保持！</span>'}</div>
+    </div>`;
+  document.querySelectorAll('.btn-open-hw-inline').forEach(b => b.onclick = () => openWorksheet());
+  document.querySelectorAll('.btn-go-upload-inline').forEach(b => b.onclick = goUpload);
+
+  // 日历
+  const cur = dateOf(state.day), y = cur.getFullYear(), m = cur.getMonth();
+  const first = new Date(y, m, 1), days = new Date(y, m + 1, 0).getDate(), offset = (first.getDay() + 6) % 7;
+  const set = new Set(state.checkins);
+  let cells = '';
+  for (let i = 0; i < offset; i++) cells += '<div></div>';
+  for (let d = 1; d <= days; d++) {
+    const key = ymd(new Date(y, m, d)), isToday = d === cur.getDate(), done = set.has(key);
+    cells += `<div class="aspect-square grid place-items-center rounded-lg text-sm ${done ? 'bg-green-500 text-white font-semibold' : 'text-slate-500'} ${isToday ? 'ring-2 ring-indigo-500' : ''}">${done ? '✓' : d}</div>`;
+  }
+  $('#calendar').innerHTML = `<div class="text-sm text-slate-500 mb-2">${y} 年 ${m + 1} 月</div>
+    <div class="grid grid-cols-7 gap-1 text-center text-xs text-slate-400 mb-1">${'一二三四五六日'.split('').map(x => `<div>${x}</div>`).join('')}</div>
+    <div class="grid grid-cols-7 gap-1">${cells}</div>`;
+
+  $('#badges').innerHTML = BADGES.map(b => { const on = b.ok(state.stats);
+    return `<div class="text-center p-2 rounded-xl ${on ? 'bg-amber-50' : 'bg-slate-50 opacity-50 grayscale'}" title="${b.desc}">
+      <div class="text-3xl">${b.icon}</div><div class="text-xs font-medium mt-1">${b.name}</div><div class="text-[10px] text-slate-400">${on ? '已获得' : b.desc}</div></div>`; }).join('');
+
+  $('#mini-mastery').innerHTML = CURRICULUM.map((id, i) => {
+    const s = state.units[id], v = eff(id), lv = level(v, s.learned), here = i === state.progress;
+    return `<div><div class="flex justify-between text-sm mb-1"><span>${here ? '👉 ' : ''}${U[id].name}</span><span class="chip ${lv.cls}">${s.learned ? pct(v) : lv.t}</span></div>${bar(s.learned ? v : 0, lv.c)}</div>`;
+  }).join('');
+
+  if (state.lastDx && !$('#grade-result').innerHTML) renderGrade(state.lastDx, state.lastGraded);
+}
+
+function goUpload() { $('#upload-card').scrollIntoView({ behavior:'smooth', block:'start' }); }
+
+// 手机照片常有 3–8MB，上传前缩到长边 1800px 的 JPEG（Claude 单图上限 5MB）
+let uploadB64 = null;
+$('#file-input').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  const url = URL.createObjectURL(f), img = new Image();
+  img.onload = () => {
+    const scale = Math.min(1, 1800 / Math.max(img.width, img.height));
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(img.width * scale); cv.height = Math.round(img.height * scale);
+    cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+    const dataUrl = cv.toDataURL('image/jpeg', 0.85);
+    uploadB64 = dataUrl.split(',')[1];
+    $('#preview-img').src = dataUrl;
+    $('#preview-wrap').classList.remove('hidden'); $('#drop-hint').classList.add('hidden');
+    URL.revokeObjectURL(url);
+  };
+  img.onerror = () => toast('无法读取这张图片，请换一张 JPG / PNG');
+  img.src = url;
+});
+
+const PIPE = ['图片预处理 & Base64 编码', '调用多模态大模型识别手写内容', '提取算式、解题步骤与最终答案', '映射人教版知识图谱（Knowledge Unit）',
+              '错因归因 & 掌握度 P(L) 更新', '艾宾浩斯调度 & 生成下一份自适应作业'];
+async function submitHomework() {
+  if (AI_MODE && !uploadB64) { toast('请先拍照或选择作业图片'); return; }
+  const btn = $('#btn-submit'); btn.disabled = true; btn.textContent = '⏳ AI 正在批改…';
+  $('#grade-result').innerHTML = '';
+  const pipe = $('#pipeline'); pipe.classList.remove('hidden');
+  pipe.innerHTML = PIPE.map((t, i) => `<li id="pipe-${i}" class="flex gap-2 text-slate-400"><span class="step-dot">○</span>${t}</li>`).join('');
+  const hw = state.homework;
+  const job = callVisionAPI(uploadB64, hw);
+  job.catch(() => {});
+  let dx;
+  try {
+    for (let i = 0; i < PIPE.length; i++) {
+      const li = $(`#pipe-${i}`); li.className = 'flex gap-2 text-indigo-600 font-medium'; li.firstChild.textContent = '◐';
+      await sleep(i === PIPE.length - 1 ? 300 : 450);
+      if (i === PIPE.length - 2) dx = await job;
+      li.className = 'flex gap-2 text-green-600'; li.firstChild.textContent = '✓';
+    }
+  } catch (err) {
+    const li = pipe.querySelector('.text-indigo-600');
+    if (li) { li.className = 'flex gap-2 text-red-600 font-medium'; li.firstChild.textContent = '✕'; }
+    $('#grade-result').innerHTML = `<div class="p-4 rounded-xl bg-red-50 text-red-700 text-sm">❌ ${err.message}</div>`;
+    btn.disabled = false; btn.textContent = '✨ AI 批改';
+    return;
+  }
+  applyDiagnosis(dx, hw);
+  state.lastDx = dx; state.lastGraded = flatQs(hw);
+  state.homework = buildHomework();
+  save();
+  btn.disabled = false; btn.textContent = '✨ AI 批改';
+  uploadB64 = null; $('#file-input').value = ''; $('#preview-wrap').classList.add('hidden'); $('#drop-hint').classList.remove('hidden');
+  renderStudent(); renderGrade(dx, state.lastGraded);
+  toast(`批改完成：${dx.total_score} 分，新作业已生成`);
+}
+
+function renderGrade(dx, qs) {
+  const ok = dx.submissions.filter(s => s.is_correct).length;
+  const color = dx.total_score >= 85 ? 'text-green-600' : dx.total_score >= 60 ? 'text-amber-600' : 'text-red-600';
+  $('#grade-result').innerHTML = `
+    <div class="rounded-2xl border border-slate-200 overflow-hidden">
+      <div class="flex items-center gap-4 p-4 bg-slate-50">
+        <div class="text-4xl font-black ${color}">${dx.total_score}<span class="text-base font-medium">分</span></div>
+        <div class="text-sm text-slate-600 flex-1">答对 ${ok} / ${dx.submissions.length} 题 · ${dx.homework_id}${dx.meta ? `<div class="text-xs text-slate-400">由 ${dx.meta.model} 批改${dx.meta.rule_overrides ? ` · 规则校验修正 ${dx.meta.rule_overrides} 题` : ''}</div>` : ''}</div>
+        <button id="btn-new-hw" class="px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm">📄 查看新作业</button>
+      </div>
+      <div class="divide-y">${dx.submissions.map((s, i) => `
+        <div class="p-4 ${s.is_correct ? '' : 'bg-red-50/50'}">
+          <div class="flex items-start gap-2">
+            <span class="text-lg">${s.is_correct ? '✅' : '❌'}</span>
+            <div class="flex-1">
+              <div class="font-medium">${s.question_id}. ${qs?.[i]?.text ?? ''}</div>
+              <div class="text-sm mt-1">识别作答：<span class="font-mono ${s.is_correct ? 'text-green-700' : 'text-red-600 line-through'}">${esc(s.student_answer)}</span>
+                ${s.is_correct ? '' : `<span class="ml-2">正确答案：<b class="font-mono text-green-700">${s.correct_answer}</b></span>`}</div>
+              ${s.recognized_work ? `<div class="text-xs text-slate-500 mt-1">手写过程：<span class="font-mono">${esc(s.recognized_work)}</span></div>` : ''}
+              ${s.error_step ? `<div class="text-xs text-red-700 mt-1">出错步骤：${esc(s.error_step)}</div>` : ''}
+              ${s.is_correct ? '' : `<div class="mt-2 flex flex-wrap gap-2"><span class="chip bg-red-100 text-red-700">${esc(s.error_type)}</span><span class="chip bg-slate-100 text-slate-600">${U[s.knowledge_unit].name}</span></div>
+              <div class="mt-2 text-sm bg-white border border-amber-200 rounded-lg p-2.5 text-amber-900">💡 ${esc(s.heuristic_guidance)}</div>`}
+            </div>
+          </div>
+        </div>`).join('')}
+      </div>
+      <details class="p-4 bg-slate-900 text-slate-100 text-xs">
+        <summary class="cursor-pointer text-slate-300">查看 AI 返回的原始 JSON（与后端协议一致）</summary>
+        <pre class="mt-3 overflow-x-auto">${esc(JSON.stringify(dx, null, 2))}</pre>
+      </details>
+    </div>`;
+  $('#btn-new-hw').onclick = () => openWorksheet();
+}
+
+/* =====================================================================
+ * 9. 作业单（A4 打印 / 导出 PDF）
+ * ===================================================================== */
+function openWorksheet(hw = state.homework) {
+  let n = 0;
+  const secHtml = hw.sections.map(sec => `
+    <div class="mt-5">
+      <div class="flex items-center gap-2"><span class="sec-tag">${sec.title}</span><span class="text-xs text-slate-500">${sec.ratio}</span></div>
+      <div class="text-xs text-slate-500 mt-1">${sec.desc}</div>
+      ${sec.questions.map(q => { n++; return `
+        <div class="mt-3" style="break-inside:avoid">
+          <div class="flex items-start"><span class="qnum shrink-0">${n}</span><span class="pt-0.5">${q.text}</span></div>
+          <div class="grid-box" style="--rows:${q.kind === 'word' ? 4 : 2}"></div>
+        </div>`; }).join('')}
+    </div>`).join('');
+  let k = 0;
+  const ansHtml = flatQs(hw).map(q => { k++; return `
+    <div class="py-2 border-b border-dashed border-slate-300" style="break-inside:avoid">
+      <div class="flex gap-2"><b>${k}.</b><span>答案：<b class="font-mono">${q.answer}</b></span><span class="ml-auto text-xs text-slate-400">${U[q.unit].name}</span></div>
+      <div class="text-sm text-slate-600 mt-1 pl-5">解析：${q.solution}</div>
+    </div>`; }).join('');
+
+  $('#worksheet').innerHTML = `
+    <div class="sheet">
+      <div class="flex justify-between items-start gap-4 border-b-2 border-slate-800 pb-3">
+        <div>
+          <div class="text-xs text-slate-500">人教版 · 五年级数学上册 · 智学闭环自适应作业</div>
+          <h1 class="text-2xl font-bold mt-1">${hw.title}</h1>
+          <div class="mt-3 text-sm flex flex-wrap gap-x-6 gap-y-1">
+            <span>姓名：${STUDENT.name}</span><span>班级：${STUDENT.cls}</span><span>日期：${md(dateOf(hw.day))}</span><span>用时：_______ 分钟</span>
+          </div>
+        </div>
+        <div class="text-center shrink-0"><div id="ws-qr" class="w-[72px] h-[72px] mx-auto"></div><div class="text-[9px] mt-1 font-mono text-slate-500">${hw.id}</div></div>
+      </div>
+      ${secHtml}
+      <div class="mt-6 text-xs text-slate-400 text-center">完成后请拍照上传，扫描右上角二维码可追溯本份作业 · 第 1 页 / 共 2 页</div>
+    </div>
+    <div class="sheet">
+      <h2 class="text-xl font-bold border-b-2 border-slate-800 pb-2">参考答案与解析</h2>
+      <div class="mt-3">${ansHtml}</div>
+      <div class="mt-6 p-4 rounded-xl bg-rose-50 border border-rose-200">
+        <div class="font-semibold text-rose-800">💌 给家长的督导建议</div>
+        <div class="text-sm mt-1 text-rose-900 leading-relaxed">${hw.parentTip}</div>
+      </div>
+      <div class="mt-6 text-xs text-slate-400 text-center">答案页建议家长保管，孩子完成后再核对 · 第 2 页 / 共 2 页</div>
+    </div>`;
+  const qrEl = $('#ws-qr');
+  if (window.QRCode) new QRCode(qrEl, { text: `amh://homework/${hw.id}`, width: 72, height: 72, correctLevel: QRCode.CorrectLevel.M });
+  else qrEl.innerHTML = '<div class="w-full h-full border grid place-items-center text-[10px]">QR</div>';
+  $('#ws-modal').classList.remove('hidden');
+}
+
+/* =====================================================================
+ * 10. 家长端
+ * ===================================================================== */
+function graphOption(getM, isLearned) {
+  return {
+    tooltip: { formatter: p => p.dataType === 'node' ? `${p.data.grade} · ${p.data.full}<br>掌握度：${p.data.learned ? pct(p.data.v) : '未学'}` : '' },
+    series: [{
+      type: 'graph', layout: 'none', roam: false, top: 30, bottom: 45, left: 50, right: 70, symbolSize: 46, edgeSymbol: ['none', 'arrow'], edgeSymbolSize: 8,
+      label: { show: true, position: 'bottom', formatter: p => `${p.data.short}\n${p.data.learned ? pct(p.data.v) : '未学'}`, fontSize: 11, color: '#334155' },
+      lineStyle: { color: '#cbd5e1', width: 1.5, curveness: 0.1 },
+      data: UNITS.map(u => { const v = getM(u.id), ln = isLearned(u.id), lv = level(v, ln);
+        return { name: u.id, short: u.short, full: u.name, grade: u.grade, v, learned: ln, x: u.pos[0] * 100, y: u.pos[1] * 70,
+          itemStyle: { color: lv.c, borderColor: '#fff', borderWidth: 2 }, symbol: u.grade === '五上' ? 'circle' : 'roundRect' }; }),
+      links: UNITS.flatMap(u => u.prereq.map(p => ({ source: p, target: u.id }))),
+    }],
+  };
+}
+
+function renderParent() {
+  const last = state.history[state.history.length - 1];
+  if (!last) {
+    $('#daily-report').innerHTML = `<p class="text-slate-500">今天还没有提交作业。孩子完成《小数乘整数》基线测试并上传后，这里会自动生成日报。</p>
+      <p class="text-sm text-slate-400">当前作业：${state.homework.title}</p>`;
+  } else {
+    const wc = {}; last.wrong.forEach(w => { const k = `${U[w.unit].name}（${w.type.split(' - ')[1]}）`; wc[k] = (wc[k] || 0) + 1; });
+    const weak5A = CURRICULUM.filter(id => state.units[id].learned && eff(id) < 0.65);
+    const roots = [...new Set(weak5A.flatMap(id => traceRoots(id, eff)))];
+    $('#daily-report').innerHTML = `
+      <div class="text-sm text-slate-500">${md(dateOf(last.day))} · 第 ${state.history.length} 次作业</div>
+      <div class="flex items-baseline gap-2"><span class="text-4xl font-black text-indigo-600">${last.score}</span><span>分</span></div>
+      <p>✅ 今天巩固了 <b>${last.mastered.length}</b> 个知识点${last.mastered.length ? '：' + last.mastered.map(id => `<span class="chip bg-green-100 text-green-700">${U[id].name}</span>`).join(' ') : '。'}</p>
+      <p>⚠️ 需要关注：${Object.keys(wc).length ? Object.entries(wc).map(([k, v]) => `<span class="chip bg-red-100 text-red-700">${esc(k)} ×${v}</span>`).join(' ') : '无，全部正确 🎉'}</p>
+      ${roots.length ? `<p>🔍 溯源发现：前置知识 ${roots.map(id => `<b>${U[id].grade}「${U[id].name}」</b>（${pct(eff(id))}）`).join('、')} 掌握不牢，可能是错误的根源。</p>` : ''}
+      <p>📌 明日作业已按 <b>3 新课 + 2 变式 + 1 复习</b> 自动生成，可直接打印。</p>
+      <div class="p-3 rounded-xl bg-rose-50 text-rose-900 text-sm">💌 ${state.homework.parentTip}</div>`;
+  }
+
+  chart('chart-radar').setOption({
+    tooltip: {}, legend: { bottom: 0, data: ['掌握概率 P(L)', '有效掌握 P(L)·R'] },
+    radar: { radius: '62%', indicator: UNITS.map(u => ({ name: u.short, max: 1 })), axisName: { color: '#475569', fontSize: 11 } },
+    series: [{ type: 'radar', data: [
+      { name: '掌握概率 P(L)', value: UNITS.map(u => state.units[u.id].pL), areaStyle: { opacity: .12 }, itemStyle: { color: '#6366f1' } },
+      { name: '有效掌握 P(L)·R', value: UNITS.map(u => r2(eff(u.id))), areaStyle: { opacity: .2 }, itemStyle: { color: '#f43f5e' } },
+    ] }],
+  }, true);
+
+  chart('chart-graph-parent').setOption(graphOption(eff, id => state.units[id].learned), true);
+  const weak = CURRICULUM.filter(id => state.units[id].learned && eff(id) < 0.65);
+  $('#trace-parent').innerHTML = weak.length
+    ? weak.map(id => { const r = traceRoots(id, eff); return `<div>🔴 <b>${U[id].name}</b>（${pct(eff(id))}）${r.length ? ' ← 溯源：' + r.map(p => `${U[p].grade}「${U[p].name}」${pct(eff(p))}`).join('、') : ' · 前置知识正常，问题集中在本节'}</div>`; }).join('')
+    : '<span class="text-slate-400">暂无需要溯源的薄弱节点。</span>';
+
+  const learned = UNITS.filter(u => state.units[u.id].learned);
+  const top = [...learned].sort((a, b) => eff(a.id) - eff(b.id)).slice(0, 3);
+  const palette = ['#ef4444', '#f59e0b', '#6366f1'];
+  chart('chart-retention').setOption({
+    tooltip: { trigger: 'axis', valueFormatter: v => pct(v) },
+    legend: { bottom: 0, textStyle: { fontSize: 11 } },
+    grid: { left: 40, right: 16, top: 16, bottom: 56 },
+    xAxis: { type: 'category', data: Array.from({ length: 16 }, (_, i) => i === 0 ? '今天' : `+${i}天`), axisLabel: { fontSize: 10 } },
+    yAxis: { type: 'value', min: 0, max: 1, axisLabel: { formatter: v => pct(v) } },
+    series: top.map((u, i) => ({ name: u.short, type: 'line', smooth: true, symbol: 'none', color: palette[i],
+      data: Array.from({ length: 16 }, (_, t) => r2(retention(u.id, t))),
+      markLine: { symbol: 'none', label: { show: false }, lineStyle: { color: palette[i], type: 'dashed' },
+        data: [{ xAxis: clamp(state.units[u.id].nextDue - state.day, 0, 15) }] } })),
+  }, true);
+
+  $('#ebb-table').innerHTML = `<thead><tr class="text-left text-slate-500 border-b">
+      <th class="py-2 pr-3">知识点</th><th class="pr-3">年级</th><th class="pr-3">复习节点</th><th class="pr-3">保持率 R</th><th class="pr-3">P(L)</th><th>下次复习</th></tr></thead>
+    <tbody>${learned.sort((a, b) => state.units[a.id].nextDue - state.units[b.id].nextDue).map(u => { const s = state.units[u.id], R = retention(u.id), isDue = s.nextDue <= state.day;
+      return `<tr class="border-b last:border-0">
+        <td class="py-2 pr-3 font-medium">${u.name}</td><td class="pr-3 text-slate-500">${u.grade}</td>
+        <td class="pr-3"><div class="flex gap-1">${[0, 1, 2, 3, 4].map(i => `<span title="第 ${INTERVALS[i]} 天" class="w-5 h-5 rounded-full text-[10px] grid place-items-center ${i < s.stage ? 'bg-green-500 text-white' : i === s.stage ? 'ring-2 ring-indigo-400 text-indigo-600' : 'bg-slate-100 text-slate-400'}">${INTERVALS[i]}</span>`).join('')}${s.stage >= 5 ? '<span class="chip bg-green-100 text-green-700">长期记忆</span>' : ''}</div></td>
+        <td class="pr-3 w-32"><div class="flex items-center gap-2">${bar(R, level(R).c)}<span class="text-xs w-9">${pct(R)}</span></div></td>
+        <td class="pr-3">${pct(s.pL)}</td>
+        <td><span class="chip ${isDue ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'}">${relDay(s.nextDue)}</span></td></tr>`; }).join('')}</tbody>`;
+
+  const sheets = UNITS.filter(u => (state.units[u.id].learned && eff(u.id) < 0.65)).sort((a, b) => eff(a.id) - eff(b.id)).slice(0, 3);
+  $('#cheat-sheets').innerHTML = sheets.length ? sheets.map(u => `
+    <div class="p-3 rounded-xl border border-slate-200">
+      <div class="flex justify-between items-center"><b class="text-sm">${u.name}</b><span class="chip ${level(eff(u.id)).cls}">${pct(eff(u.id))}</span></div>
+      <p class="text-sm text-slate-600 mt-1">${CONTENT[u.id].tip}</p>
+      <div class="flex flex-wrap gap-2 mt-2">
+        <button class="push-btn text-xs px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700" data-msg="已推送《${CONTENT[u.id].lesson}》">🎬 ${CONTENT[u.id].lesson}</button>
+        <button class="push-btn text-xs px-2 py-1 rounded-lg bg-amber-50 text-amber-700" data-msg="已推送图解卡片《${CONTENT[u.id].card}》">🖼 ${CONTENT[u.id].card}</button>
+      </div>
+    </div>`).join('') : '<p class="text-sm text-slate-400">目前没有薄弱知识点，继续保持！</p>';
+}
+
+/* =====================================================================
+ * 11. 教师端（班级数据为模拟；STU1001 使用实时状态）
+ * ===================================================================== */
+function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const NAMES = ['王子轩','李思涵','张一诺','刘欣然','陈宇航','杨梓萱','赵浩然','黄雨桐','周子墨','吴诗琪','徐俊熙','孙语嫣','马天佑','朱可馨','胡博文','郭佳怡','何锦程','高若溪','林嘉树','罗安琪','郑皓宇','梁沐晴','谢明哲','宋知夏','唐亦辰','许乐瑶','韩星野','冯书瑶','邓煜城','曹心怡','彭子谦'];
+const CLASS_BASE = { MATH_3B_INT_MULT:.88, MATH_4B_MULT_LAWS:.74, MATH_4B_DEC_MEANING:.8, MATH_4B_POINT_SHIFT:.6,
+  MATH_5A_DECIMAL_MULT_01:.72, MATH_5A_DECIMAL_MULT_02:.52, MATH_5A_DECIMAL_MULT_03:.58, MATH_5A_DECIMAL_MULT_04:.45 };
+const CLASS = (() => { const rng = mulberry32(20261014);
+  return NAMES.map((name, i) => { const skill = (rng() - 0.5) * 0.35;
+    return { id: `STU${1002 + i}`, name, m: Object.fromEntries(UNITS.map(u => [u.id, r2(clamp(CLASS_BASE[u.id] + skill + (rng() - 0.5) * 0.3, 0.08, 0.99))])) }; }); })();
+const BASE_ERRORS = { '小数×小数 · 小数点位数处理错误':21, '小数点移动 · 小数点移动方向错误':15, '积的近似数 · 未按要求保留两位小数':13,
+  '小数简便运算 · 乘法分配律拆分错误':11, '小数×整数 · 进位或乘法口诀错误':9, '小数意义 · 按小数位数多少比较大小':7 };
+
+function classRoster() {
+  const me = { id: STUDENT.id, name: `${STUDENT.name}（实时）`, live: true, m: Object.fromEntries(UNITS.map(u => [u.id, r2(eff(u.id))])) };
+  return [me, ...CLASS];
+}
+const avgOf = (st) => r2(UNITS.reduce((s, u) => s + st.m[u.id], 0) / UNITS.length);
+
+function renderTeacher() {
+  const roster = classRoster();
+  const classAvg = id => r2(roster.reduce((s, st) => s + st.m[id], 0) / roster.length);
+  const overall = r2(roster.reduce((s, st) => s + avgOf(st), 0) / roster.length);
+  const alerts = roster.filter(st => avgOf(st) < 0.6).length;
+  const todayDone = state.checkins.includes(ymd(dateOf(state.day)));
+  const kpi = (t, v, sub, c) => `<div class="card"><div class="text-sm text-slate-500">${t}</div><div class="text-3xl font-bold mt-1 ${c}">${v}</div><div class="text-xs text-slate-400 mt-1">${sub}</div></div>`;
+  $('#kpis').innerHTML = kpi('班级人数', roster.length, STUDENT.cls, 'text-slate-800')
+    + kpi('平均掌握度', pct(overall), '8 个知识元 · P(L)·R', 'text-indigo-600')
+    + kpi('今日提交', `${26 + (todayDone ? 1 : 0)}/${roster.length}`, '拍照上传 · AI 已批改', 'text-green-600')
+    + kpi('预警学生', alerts, '平均掌握度 < 60%', 'text-red-600');
+
+  const ys = roster.map(s => s.name);
+  chart('chart-heatmap').setOption({
+    tooltip: { formatter: p => `${ys[p.value[1]]}<br>${UNITS[p.value[0]].name}：${pct(p.value[2])}` },
+    grid: { left: 110, right: 16, top: 10, bottom: 70 },
+    xAxis: { type: 'category', data: UNITS.map(u => `${u.short}\n${u.grade}`), axisLabel: { fontSize: 10, interval: 0 }, splitArea: { show: true } },
+    yAxis: { type: 'category', data: ys, inverse: true, axisLabel: { fontSize: 11 } },
+    visualMap: { min: 0, max: 1, calculable: false, orient: 'horizontal', left: 'center', bottom: 0, itemHeight: 160,
+      inRange: { color: ['#ef4444', '#f59e0b', '#fde68a', '#86efac', '#16a34a'] }, formatter: v => pct(v) },
+    series: [{ type: 'heatmap', data: roster.flatMap((st, y) => UNITS.map((u, x) => [x, y, st.m[u.id]])), label: { show: false },
+      itemStyle: { borderColor: '#fff', borderWidth: 1 } }],
+  }, true);
+
+  const errs = { ...BASE_ERRORS };
+  state.errorLog.forEach(e => { const k = `${U[e.unit].short} · ${e.type.split(' - ')[1]}`; errs[k] = (errs[k] || 0) + 1; });
+  const ranked = Object.entries(errs).sort((a, b) => b[1] - a[1]).slice(0, 7).reverse();
+  chart('chart-errors').setOption({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: 8, right: 30, top: 8, bottom: 8, containLabel: true },
+    xAxis: { type: 'value', show: false },
+    yAxis: { type: 'category', data: ranked.map(r => r[0]), axisLabel: { fontSize: 10, width: 150, overflow: 'truncate' } },
+    series: [{ type: 'bar', data: ranked.map(r => r[1]), barWidth: 14, label: { show: true, position: 'right', fontSize: 11 },
+      itemStyle: { color: '#f43f5e', borderRadius: [0, 6, 6, 0] } }],
+  }, true);
+
+  const weak = CURRICULUM.filter(id => classAvg(id) < 0.65);
+  $('#trace-teacher').innerHTML = weak.map(id => { const r = traceRoots(id, classAvg, 0.7);
+    return `<div class="p-2.5 rounded-lg bg-red-50"><b>${U[id].name}</b> 班级均值 ${pct(classAvg(id))}
+      ${r.length ? `<div class="text-xs mt-1 text-red-800">↳ 溯源：${r.map(p => `${U[p].grade}「${U[p].name}」${pct(classAvg(p))}`).join(' → ')}</div>` : '<div class="text-xs mt-1 text-slate-500">前置知识整体正常</div>'}</div>`; }).join('')
+    + `<button class="push-btn w-full mt-1 text-sm py-2 rounded-lg bg-indigo-600 text-white" data-msg="已向全班推送「小数点移动规律」微课与图解卡">📣 一键推送前置知识微课给全班</button>`;
+
+  chart('chart-graph-teacher').setOption(graphOption(classAvg, () => true), true);
+
+  $('#student-table').innerHTML = `<thead class="sticky top-0 bg-white"><tr class="text-left text-slate-500 border-b">
+      <th class="py-2 pr-3">学生</th><th class="pr-3">平均掌握度</th><th class="pr-3">最薄弱知识点</th><th class="pr-3">状态</th><th></th></tr></thead>
+    <tbody>${roster.map((st, i) => { const a = avgOf(st), w = UNITS.reduce((m, u) => st.m[u.id] < st.m[m] ? u.id : m, UNITS[0].id), lv = level(a);
+      return `<tr class="border-b last:border-0 ${st.live ? 'bg-indigo-50/60' : ''}">
+        <td class="py-2 pr-3 font-medium">${st.name}<div class="text-xs text-slate-400">${st.id}</div></td>
+        <td class="pr-3 w-40"><div class="flex items-center gap-2">${bar(a, lv.c)}<span class="text-xs w-9">${pct(a)}</span></div></td>
+        <td class="pr-3">${U[w].name} <span class="text-xs text-slate-400">${pct(st.m[w])}</span></td>
+        <td class="pr-3"><span class="chip ${lv.cls}">${lv.t}</span></td>
+        <td><button class="profile-btn text-xs px-2.5 py-1 rounded-lg border hover:bg-slate-50" data-idx="${i}">调阅档案</button></td></tr>`; }).join('')}</tbody>`;
+  document.querySelectorAll('.profile-btn').forEach(b => b.onclick = () => openProfile(roster[+b.dataset.idx]));
+}
+
+function openProfile(st) {
+  $('#profile-modal').classList.remove('hidden');
+  $('#profile-title').textContent = `📁 ${st.name} · ${st.id} · 能力档案`;
+  const getM = id => st.m[id];
+  const weak = UNITS.filter(u => st.m[u.id] < 0.65).sort((a, b) => st.m[a.id] - st.m[b.id]);
+  const recent = st.live ? state.errorLog.slice(-5).reverse() : [];
+  $('#profile-body').innerHTML = `
+    <div><div class="font-semibold mb-1">薄弱知识点</div>${weak.length ? weak.map(u => `<span class="chip ${level(st.m[u.id]).cls} mr-1 mb-1">${u.name} ${pct(st.m[u.id])}</span>`).join('') : '<span class="text-slate-400">无</span>'}</div>
+    <div><div class="font-semibold mb-1">前置漏洞溯源</div>${weak.filter(u => u.grade === '五上').map(u => { const r = traceRoots(u.id, getM); return `<div class="text-xs">• ${u.name} ← ${r.length ? r.map(p => U[p].name).join('、') : '本节问题'}</div>`; }).join('') || '<span class="text-slate-400 text-xs">无</span>'}</div>
+    ${st.live ? `<div><div class="font-semibold mb-1">最近错题</div>${recent.length ? recent.map(e => `<div class="text-xs">• 第 ${e.day} 天 · ${U[e.unit].name} · ${esc(e.type)}</div>`).join('') : '<span class="text-slate-400 text-xs">暂无</span>'}</div>` : ''}
+    <div class="flex flex-wrap gap-2 pt-2">
+      <button class="push-btn px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs" data-msg="已向 ${st.name} 家长推送辅导小贴士与微课">📣 推送辅导材料</button>
+      <button class="push-btn px-3 py-1.5 rounded-lg border text-xs" data-msg="已为 ${st.name} 安排一对一面批">🗓 安排面批</button>
+    </div>`;
+  requestAnimationFrame(() => {
+    const c = chart('chart-profile'); c.resize();
+    c.setOption({ radar: { radius: '62%', indicator: UNITS.map(u => ({ name: u.short, max: 1 })), axisName: { fontSize: 10, color: '#475569' } },
+      tooltip: {}, series: [{ type: 'radar', data: [{ name: st.name, value: UNITS.map(u => st.m[u.id]), areaStyle: { opacity: .25 }, itemStyle: { color: '#6366f1' } }] }] }, true);
+  });
+}
+
+/* =====================================================================
+ * 12. 事件绑定 & 启动
+ * ===================================================================== */
+document.querySelectorAll('.tab-btn').forEach(b => b.onclick = () => switchView(b.dataset.view));
+$('#btn-go-upload').onclick = goUpload;
+$('#btn-open-hw').onclick = () => openWorksheet();
+$('#btn-submit').onclick = submitHomework;
+document.querySelectorAll('.btn-print-hw').forEach(b => b.onclick = () => openWorksheet());
+document.addEventListener('click', e => {
+  const close = e.target.closest('[data-close]'); if (close) $('#' + close.dataset.close).classList.add('hidden');
+  const push = e.target.closest('.push-btn'); if (push) toast('✅ ' + push.dataset.msg);
+});
+$('#btn-next-day').onclick = () => { state.day++; save(); renderView(); toast(`进入第 ${state.day} 天：记忆保持率已按 e^(-t/S) 衰减`); };
+$('#btn-reset').onclick = () => { if (!confirm('确定清空所有演示数据并重新开始？')) return;
+  try { localStorage.removeItem(STORE_KEY); } catch (e) {}
+  initState(); save(); $('#grade-result').innerHTML = ''; $('#pipeline').classList.add('hidden'); renderView(); toast('已重置为冷启动状态'); };
+
+load();
+let savedView = 'student'; try { savedView = localStorage.getItem('amh_view') || 'student'; } catch (e) {}
+switchView(savedView);
+detectBackend();
+</script>
+</body>
+</html>
